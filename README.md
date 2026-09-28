@@ -11,6 +11,8 @@ como bot inline do Telegram.
   normaliza a resposta.
 - **Neutralidade:** só números oficiais, sempre com `apurado_pct` e o horário do TSE. Nenhuma
   projeção, nenhum comentário, nenhum anúncio.
+- Listado em [**awesome-mcp-brasil**](https://github.com/daniel-filius/awesome-mcp-brasil) — hub
+  curado e auto-verificado de servidores MCP e skills brasileiros (categoria Eleições / Governo).
 
 <!-- mcp-name: io.github.daniel-filius/apuracao-2026 -->
 
