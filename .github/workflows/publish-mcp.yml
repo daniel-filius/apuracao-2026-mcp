@@ -1,0 +1,85 @@
+name: Publish to MCP Registry
+
+# Dispara em tag vX.Y.Z (ou manualmente). Passos:
+# testes → build da imagem → push em ghcr.io → server.json com a versão da tag →
+# mcp-publisher login github-oidc → mcp-publisher publish → verificação no registro.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC para o registro MCP
+      contents: read
+      packages: write   # push em ghcr.io com GITHUB_TOKEN
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Testes
+        run: |
+          pip install -e ".[dev]"
+          pytest -q
+
+      - name: Versão (da tag, ou do server.json em dispatch manual)
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(jq -r .version server.json)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Login ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build + push imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          provenance: false
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/apuracao-2026-mcp:v${{ steps.ver.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/apuracao-2026-mcp:latest
+
+      - name: Smoke da imagem publicada
+        run: |
+          docker run --rm "ghcr.io/${{ github.repository_owner }}/apuracao-2026-mcp:v${{ steps.ver.outputs.version }}" --version
+          docker run --rm "ghcr.io/${{ github.repository_owner }}/apuracao-2026-mcp:v${{ steps.ver.outputs.version }}" --smoke
+
+      - name: server.json com a versão e o identifier da imagem
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          jq --arg v "$V" --arg id "ghcr.io/${{ github.repository_owner }}/apuracao-2026-mcp:v$V" \
+            '.version = $v | .packages[0].identifier = $id' server.json > server.tmp && mv server.tmp server.json
+          cat server.json
+
+      - name: Instalar mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher --version || true
+
+      - name: Autenticar no registro MCP (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publicar no registro MCP
+        run: ./mcp-publisher publish
+
+      - name: Verificar listagem
+        run: |
+          sleep 10
+          curl -sf "https://registry.modelcontextprotocol.io/v0/servers?search=apuracao" | jq '.servers[] | {name: .server.name, version: .server.version, status: ._meta["io.modelcontextprotocol.registry/official"].status}'

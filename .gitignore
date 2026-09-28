@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.env
+.apuracao_bot_offset.json
+metrics.jsonl
+mcp-publisher
