@@ -3,7 +3,7 @@
   "name": "io.github.daniel-filius/apuracao-2026",
   "title": "Apuração Eleições 2026 (TSE)",
   "description": "Resultados oficiais parciais das eleições brasileiras 2026 (TSE) por UF, cargo e município.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "websiteUrl": "https://github.com/daniel-filius/apuracao-2026-mcp#readme",
   "repository": {
     "url": "https://github.com/daniel-filius/apuracao-2026-mcp",
@@ -12,7 +12,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/daniel-filius/apuracao-2026-mcp:v0.1.0",
+      "identifier": "ghcr.io/daniel-filius/apuracao-2026-mcp:v0.1.1",
       "transport": {
         "type": "stdio"
       }

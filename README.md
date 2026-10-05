@@ -7,8 +7,10 @@ como bot inline do Telegram.
 
 - 1º turno: **domingo 04/10/2026** · 2º turno: **25/10/2026**
 - Sem chave, sem cadastro: o TSE publica os JSON abertamente. Este projeto só decifra os códigos
-  (`sp-c0003-e000xxx-r.json`…), faz cache respeitoso (≥ 45 s por arquivo, `If-Modified-Since`) e
-  normaliza a resposta.
+  (`sp-c0003-e006259-u.json`…), faz cache respeitoso (≥ 45 s por arquivo, `If-Modified-Since`) e
+  normaliza a resposta. Em 2026 o TSE publica o agregado UF/BR no mesmo formato "completo"
+  (`dados/<uf>/<uf>-c<cargo>-e<eleicao>-u.json`) do arquivo por município; o simplificado
+  (`dados-simplificados/…-r.json`, 2022) saiu do portal — a **v0.1.1** lê os dois e escolhe o que existe.
 - **Neutralidade:** só números oficiais, sempre com `apurado_pct` e o horário do TSE. Nenhuma
   projeção, nenhum comentário, nenhum anúncio.
 - Listado em [**awesome-mcp-brasil**](https://github.com/daniel-filius/awesome-mcp-brasil) — hub
@@ -21,7 +23,7 @@ como bot inline do Telegram.
 ### Docker (imagem publicada em ghcr.io)
 
 ```bash
-docker run -i --rm ghcr.io/daniel-filius/apuracao-2026-mcp:v0.1.0
+docker run -i --rm ghcr.io/daniel-filius/apuracao-2026-mcp:v0.1.1
 ```
 
 Claude Desktop (`claude_desktop_config.json`) / Cursor / VS Code (`mcp.json`):
@@ -31,7 +33,7 @@ Claude Desktop (`claude_desktop_config.json`) / Cursor / VS Code (`mcp.json`):
   "mcpServers": {
     "apuracao-2026": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/daniel-filius/apuracao-2026-mcp:v0.1.0"]
+      "args": ["run", "-i", "--rm", "ghcr.io/daniel-filius/apuracao-2026-mcp:v0.1.1"]
     }
   }
 }
@@ -59,7 +61,7 @@ Claude Code:
 ```bash
 claude mcp add apuracao-2026 -- uvx --from git+https://github.com/daniel-filius/apuracao-2026-mcp apuracao-mcp
 # ou
-claude mcp add apuracao-2026 -- docker run -i --rm ghcr.io/daniel-filius/apuracao-2026-mcp:v0.1.0
+claude mcp add apuracao-2026 -- docker run -i --rm ghcr.io/daniel-filius/apuracao-2026-mcp:v0.1.1
 ```
 
 Também está no [registro MCP oficial](https://registry.modelcontextprotocol.io/v0/servers?search=apuracao)
@@ -143,6 +145,15 @@ Pix copia-e-cola (valor livre):
 ```
 00020101021226530014br.gov.bcb.pix0131danielfilho.workspace@gmail.com5204000053039865802BR5913DANIEL FILIUS6009SAO PAULO62160512APURACAO20266304CC54
 ```
+
+## Mudanças
+
+- **v0.1.1 (2026-10-05)** — hotfix da noite do 1º turno: o TSE deixou de publicar o agregado UF/BR
+  em `dados-simplificados/…-r.json` (404 `NoSuchKey`) e passou a servi-lo em
+  `dados/<uf>/<uf>-c<cargo>-e<eleicao>-u.json`. `resultado`/`resumo_brasil` agora tentam o formato
+  completo, caem para o simplificado (histórico 2022) e memorizam o que funcionou; fixtures reais
+  de 2026 (SP governador, BR presidente, `ele-c.json` de 05/10) entraram nos testes.
+- **v0.1.0 (2026-09-28)** — primeira publicação no registro MCP (OCI em ghcr.io).
 
 ## Fonte e limites
 

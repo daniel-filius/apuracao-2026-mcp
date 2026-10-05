@@ -5,8 +5,13 @@ Fonte: arquivos JSON públicos, sem chave e sem cadastro, publicados pelo TSE em
 
 - lê o config canônico `comum/config/ele-c.json` e resolve dinamicamente
   ciclo / código da eleição / cargos por abrangência (os códigos mudam a cada pleito);
-- monta as URLs `dados-simplificados/<uf>/<uf>-c<cargo>-e<eleicao>-r.json`
-  (UF/BR) e `dados/<uf>/<uf><cod_mun>-c<cargo>-e<eleicao>-u.json` (município);
+- monta as URLs dos resultados. Desde as Eleições Gerais 2026 o TSE publica o
+  agregado UF/BR no formato *completo* `dados/<uf>/<uf>-c<cargo>-e<eleicao>-u.json`
+  (mesmo esquema `carg/agr/par/cand` do arquivo por município
+  `dados/<uf>/<uf><cod_mun>-c<cargo>-e<eleicao>-u.json`); o formato *simplificado*
+  `dados-simplificados/<uf>/<uf>-c<cargo>-e<eleicao>-r.json` (2022) não existe mais
+  no portal para 2026 (NoSuchKey) e fica como legado. O cliente tenta o formato
+  esperado para o ano, cai para o outro em 404 e memoriza o que funcionou;
 - faz cache por URL (>= 45 s) com `If-Modified-Since` / `If-None-Match` e um
   User-Agent que identifica o projeto, para não sobrecarregar o TSE;
 - normaliza a resposta para um dicionário estável, sempre com `fonte` e
@@ -183,6 +188,9 @@ class TSEClient:
         self._cache: dict[str, _Entry] = {}
         self._lock = threading.Lock()
         self.requests_feitas = 0  # instrumentação (testes / métricas)
+        # (ciclo, codigo, cargo, uf) -> "u" (completo) | "r" (simplificado): formato que o TSE
+        # realmente serve para este agregado, descoberto no 1º acesso (evita 404 a cada refresh).
+        self._formato_resultado: dict[tuple[str, str, int, str], str] = {}
 
     # ------------------------------------------------------------------ HTTP
     def _get_json(self, url: str, ttl: float) -> Any:
@@ -295,9 +303,38 @@ class TSEClient:
 
     # ------------------------------------------------------------- resultados
     def url_resultado(self, el: Eleicao, cargo_cd: int, uf: str) -> str:
+        """Agregado UF/BR no formato *simplificado* (`-r.json`, usado até 2022)."""
         uf = normalizar_uf(uf)
         return (f"{BASE_URL}/{el.ciclo}/{el.codigo}/dados-simplificados/{uf}/"
                 f"{uf}-c{cargo_cd:04d}-e{int(el.codigo):06d}-r.json")
+
+    def url_resultado_completo(self, el: Eleicao, cargo_cd: int, uf: str) -> str:
+        """Agregado UF/BR no formato *completo* (`-u.json`, o que o TSE serve em 2026)."""
+        uf = normalizar_uf(uf)
+        return (f"{BASE_URL}/{el.ciclo}/{el.codigo}/dados/{uf}/"
+                f"{uf}-c{cargo_cd:04d}-e{int(el.codigo):06d}-u.json")
+
+    def _ordem_formatos(self, el: Eleicao, cargo_cd: int, uf: str) -> list[str]:
+        memorizado = self._formato_resultado.get((el.ciclo, el.codigo, cargo_cd, uf))
+        if memorizado:
+            return [memorizado]
+        # 2024 em diante o portal só publica o completo; a tabela histórica de 2022 era simplificado.
+        return ["u", "r"] if (el.ano or 0) >= 2024 else ["r", "u"]
+
+    def _buscar_resultado(self, el: Eleicao, cargo_cd: int, uf: str, limite: int) -> dict[str, Any]:
+        tentadas: list[str] = []
+        for fmt in self._ordem_formatos(el, cargo_cd, uf):
+            url = (self.url_resultado_completo if fmt == "u" else self.url_resultado)(el, cargo_cd, uf)
+            try:
+                raw = self._get_json(url, TTL_DADOS_S)
+            except NaoEncontrado:
+                tentadas.append(url)
+                continue
+            self._formato_resultado[(el.ciclo, el.codigo, cargo_cd, uf)] = fmt
+            if fmt == "u":
+                return normalizar_completo(raw, el, cargo_cd, uf.upper(), url, limite)
+            return normalizar_simplificado(raw, el, cargo_cd, uf, url, limite)
+        raise NaoEncontrado("o TSE ainda não publicou este arquivo: " + " | ".join(tentadas))
 
     def url_municipio(self, el: Eleicao, cargo_cd: int, uf: str, cod_tse: str) -> str:
         uf = normalizar_uf(uf)
@@ -314,9 +351,7 @@ class TSEClient:
         if cargo_cd != 1 and uf == "br":
             raise TSEError("Só o cargo 'presidente' tem total nacional (BR); para os demais informe a UF.")
         el = self.resolver_eleicao(cargo_cd, uf, turno, ano)
-        url = self.url_resultado(el, cargo_cd, uf)
-        raw = self._get_json(url, TTL_DADOS_S)
-        return normalizar_simplificado(raw, el, cargo_cd, uf, url, limite)
+        return self._buscar_resultado(el, cargo_cd, uf, limite)
 
     def resumo_brasil(self, turno: int = 1, ano: int | None = None, limite: int = 20) -> dict[str, Any]:
         return self.resultado("br", "presidente", turno=turno, ano=ano, limite=limite)
@@ -358,7 +393,10 @@ def _carimbo(raw: dict[str, Any]) -> str:
 def _candidato(c: dict[str, Any], pos: int) -> dict[str, Any]:
     return {
         "posicao": pos,
-        "nome": c.get("nm"),
+        # Formato completo (2026) traz `nm` = nome civil e `nmu` = nome de urna; o simplificado
+        # (2022) só `nm` já com o nome de urna. Exibimos sempre o nome de urna, como o TSE.
+        "nome": c.get("nmu") or c.get("nm"),
+        "nome_completo": c.get("nm") if c.get("nmu") else None,
         "numero": c.get("n"),
         "partido": _partido(c.get("cc")) or c.get("sgp") or None,
         "coligacao": c.get("cc") or None,
@@ -395,7 +433,7 @@ def normalizar_simplificado(raw: dict[str, Any], el: Eleicao, cargo_cd: int, uf:
         "apurado_pct": _pct(raw.get("pst")),
         "secoes_totalizadas": _int(raw.get("st")),
         "secoes_total": _int(raw.get("s")),
-        "matematicamente_definido": raw.get("md") == "S",
+        "matematicamente_definido": _md(raw),
         "totais": {
             "eleitorado": _int(raw.get("e")),
             "comparecimento": _int(raw.get("c")),
@@ -413,8 +451,17 @@ def normalizar_simplificado(raw: dict[str, Any], el: Eleicao, cargo_cd: int, uf:
     return out
 
 
-def normalizar_municipio(raw: dict[str, Any], el: Eleicao, cargo_cd: int, mun: dict[str, Any],
-                         url: str, limite: int = 20) -> dict[str, Any]:
+def _md(raw: dict[str, Any]) -> bool:
+    # `md` = matematicamente definido; o TSE já publicou "S" (2022) e "s" (2026).
+    return str(raw.get("md") or "").strip().lower() == "s"
+
+
+def normalizar_completo(raw: dict[str, Any], el: Eleicao, cargo_cd: int, abrangencia: str,
+                        url: str, limite: int = 20, mun: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Formato completo do TSE (`-u.json`, blocos `carg/agr/par/cand` + `s`/`e`/`v`).
+
+    Em 2026 é o único formato publicado, tanto para o agregado UF/BR quanto por município.
+    """
     cands: list[dict[str, Any]] = []
     for carg in raw.get("carg", []):
         if str(carg.get("cd")) != str(cargo_cd):
@@ -425,17 +472,19 @@ def normalizar_municipio(raw: dict[str, Any], el: Eleicao, cargo_cd: int, mun: d
                     c = dict(c)
                     c.setdefault("sgp", par.get("sg"))
                     c["cc"] = c.get("cc") or (f"{par.get('sg')} - {agr.get('com')}" if agr.get("com") else par.get("sg"))
-                    vices = [v.get("nm") for v in c.get("vs", []) if v.get("tp") == "v"]
+                    vices = [v.get("nmu") or v.get("nm") for v in c.get("vs", []) if v.get("tp") == "v"]
                     c["nv"] = vices[0] if vices else None
                     cands.append(c)
     cands.sort(key=lambda c: -_int(c.get("vap")))
-    s, e, v = raw.get("s", {}), raw.get("e", {}), raw.get("v", {})
-    out = _cabecalho(el, cargo_cd, f"{mun['uf']} / {mun['nome']}", raw, url)
+    s, e, v = raw.get("s") or {}, raw.get("e") or {}, raw.get("v") or {}
+    out = _cabecalho(el, cargo_cd, abrangencia, raw, url)
+    if mun is not None:
+        out["municipio"] = mun
     out.update({
-        "municipio": mun,
         "apurado_pct": _pct(s.get("pst")),
         "secoes_totalizadas": _int(s.get("st")),
         "secoes_total": _int(s.get("ts")),
+        "matematicamente_definido": _md(raw),
         "totais": {
             "eleitorado": _int(e.get("te")),
             "comparecimento": _int(e.get("c")),
@@ -451,6 +500,11 @@ def normalizar_municipio(raw: dict[str, Any], el: Eleicao, cargo_cd: int, mun: d
         "candidatos": [_candidato(c, i + 1) for i, c in enumerate(cands[:limite])],
     })
     return out
+
+
+def normalizar_municipio(raw: dict[str, Any], el: Eleicao, cargo_cd: int, mun: dict[str, Any],
+                         url: str, limite: int = 20) -> dict[str, Any]:
+    return normalizar_completo(raw, el, cargo_cd, f"{mun['uf']} / {mun['nome']}", url, limite, mun=mun)
 
 
 _FILE_RE = re.compile(r"^(?P<uf>[a-z]{2})(?P<mun>\d{5})?-c(?P<cargo>\d{4})-e(?P<ele>\d{6})-(?P<tipo>[ru])\.json$")

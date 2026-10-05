@@ -5,6 +5,7 @@ import json
 import pytest
 from mcp.client import Client
 
+from apuracao_mcp import __version__
 from apuracao_mcp import server as srv
 from apuracao_mcp.tse_client import TSEClient
 
@@ -70,7 +71,7 @@ def test_cli_version(capsys):
     with pytest.raises(SystemExit) as exc:
         srv.main(["--version"])
     assert exc.value.code == 0
-    assert "apuracao-mcp 0.1.0" in capsys.readouterr().out
+    assert f"apuracao-mcp {__version__}" in capsys.readouterr().out
 
 
 def test_cli_smoke_e_demo(capsys):

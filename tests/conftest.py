@@ -25,6 +25,15 @@ ROTAS = {
     f"{BASE_URL}/ele2022/546/dados/sp/sp71072-c0003-e000546-u.json": "sp71072-c0003-e000546-u.json",
 }
 
+# Eleições Gerais 2026 (baixados em 2026-10-05, madrugada após o 1º turno): o TSE passou a publicar
+# o agregado UF/BR só no formato completo `dados/<uf>/<uf>-c<cargo>-e<eleicao>-u.json`; o
+# `dados-simplificados/…-r.json` de 2022 devolve 404 (NoSuchKey) — por isso não há rota para ele aqui.
+ROTAS_2026 = {
+    f"{BASE_URL}/comum/config/ele-c.json": "ele-c-2026-10-05.json",
+    f"{BASE_URL}/ele2026/6259/dados/sp/sp-c0003-e006259-u.json": "sp-c0003-e006259-u.json",
+    f"{BASE_URL}/ele2026/6257/dados/br/br-c0001-e006257-u.json": "br-c0001-e006257-u.json",
+}
+
 
 class FakeTSE:
     """Transporte httpx que serve as fixtures e registra as requisições (URL + headers)."""
@@ -61,6 +70,17 @@ def fake() -> FakeTSE:
 @pytest.fixture
 def client(fake: FakeTSE) -> TSEClient:
     return TSEClient(transport=fake.transport())
+
+
+@pytest.fixture
+def fake_2026() -> FakeTSE:
+    """Portal do TSE como está em 2026-10-05 (config real + agregados UF/BR no formato completo)."""
+    return FakeTSE(overrides=ROTAS_2026)
+
+
+@pytest.fixture
+def client_2026(fake_2026: FakeTSE) -> TSEClient:
+    return TSEClient(transport=fake_2026.transport())
 
 
 @pytest.fixture
