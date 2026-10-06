@@ -5,7 +5,7 @@ divulgação do TSE (`resultados.tse.jus.br`), como **tools MCP** para Claude, C
 qualquer cliente [Model Context Protocol](https://modelcontextprotocol.io) — e, opcionalmente,
 como bot inline do Telegram.
 
-- 1º turno: **domingo 04/10/2026** · 2º turno: **25/10/2026**
+- 1º turno 04/10/2026 (totalizado, validado ao vivo) · **2º turno: domingo 25/10/2026** — use `turno=2`
 - Sem chave, sem cadastro: o TSE publica os JSON abertamente. Este projeto só decifra os códigos
   (`sp-c0003-e006259-u.json`…), faz cache respeitoso (≥ 45 s por arquivo, `If-Modified-Since`) e
   normaliza a resposta. Em 2026 o TSE publica o agregado UF/BR no mesmo formato "completo"
@@ -99,15 +99,45 @@ Toda resposta inclui:
 Exemplos de pergunta ao agente: *"quem está na frente para governador do RS?"*,
 *"como está a apuração para presidente?"*, *"resultado de prefeito em Campinas em 2024"*.
 
-### Antes de o TSE publicar o pleito de 2026
+### 1º turno (04/10/2026) — validado ao vivo
 
-Os códigos de 2026 só aparecem no config oficial (`ele-c.json`) perto da votação. Até lá, as
-tools explicam isso e você pode usar dados históricos: `ano=2022` (Eleições Gerais, 1º/2º turno)
-e `ano=2024` (municipais).
+Na noite da apuração o servidor (imagem `v0.1.1`) leu os arquivos reais do TSE. Resposta real de
+`resultado("SP", "governador")`, resumida:
+
+```json
+{
+  "fonte": "TSE – divulgação oficial, resultado parcial",
+  "atualizado_em": "05/10/2026 11:44:29",
+  "eleicao": {"ano": 2026, "turno": 1, "codigo": "6259", "ciclo": "ele2026", "nome": "Eleição Ordinária Estadual - 2026 1º Turno"},
+  "cargo": "Governador", "abrangencia": "SP",
+  "url_tse": "https://resultados.tse.jus.br/oficial/ele2026/6259/dados/sp/sp-c0003-e006259-u.json",
+  "apurado_pct": 100.0, "secoes_totalizadas": 103656, "secoes_total": 103656,
+  "totais": {"eleitorado": 34081699, "comparecimento_pct": 77.44, "votos_validos": 23130513, "brancos_pct": 5.11, "nulos_pct": 7.26},
+  "candidatos": [
+    {"posicao": 1, "nome": "TARCÍSIO", "numero": "10", "partido": "REPUBLICANOS", "votos": 14491874, "pct": 62.65, "situacao": "Eleito", "eleito": true},
+    {"posicao": 2, "nome": "FERNANDO HADDAD", "numero": "13", "partido": "PT", "votos": 8423656, "pct": 36.42, "situacao": "Não eleito", "eleito": false}
+  ]
+}
+```
+
+### 2º turno — domingo 25/10/2026
+
+Presidente (`BR`) e governador nas UFs em que ninguém passou de 50 % dos votos válidos. Basta
+`turno=2`:
+
+- *"como está a apuração do 2º turno para presidente?"* → `resumo_brasil(turno=2)`
+- *"2º turno para governador do RJ"* → `resultado("RJ", "governador", turno=2)`
+
+O TSE inclui o 2º turno no config oficial (`ele-c.json`; eleições `6258` federal e `6260`
+estadual) pouco antes da votação. Até lá `turno=2` devolve uma mensagem explicando isso (não um
+erro genérico); no domingo 25/10 os resultados começam a aparecer a partir das 17h (Brasília), com
+`apurado_pct` subindo até a totalização. O 1º turno continua disponível com `turno=1`.
+
+Histórico: `ano=2022` (Eleições Gerais, 1º/2º turno) e `ano=2024` (municipais).
 
 ```bash
-apuracao-mcp --smoke                 # lê o config do TSE e imprime o ciclo atual
-apuracao-mcp --demo SP governador    # resultado normalizado (2022) sem iniciar o MCP
+apuracao-mcp --smoke                 # lê o config do TSE e imprime o ciclo/eleições atuais
+apuracao-mcp --demo SP governador    # resultado normalizado sem iniciar o MCP
 ```
 
 ## Bot Telegram (opcional)
